@@ -48,6 +48,10 @@ if submit_button:
         images_html = "<h3>Fotodokumentation</h3><div class='photo-grid'>"
         for idx, file in enumerate(uploaded_files):
             img = Image.open(file)
+            # Fehlerbehebung: Konvertierung von RGBA/LA zu RGB für die JPEG-Kompatibilität
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                img = img.convert("RGB")
+            
             buffered = BytesIO()
             img.save(buffered, format="JPEG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
