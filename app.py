@@ -111,8 +111,7 @@ with st.form("schaden_form"):
         label="Schadensprotokoll als PDF generieren"
     )
 
-# Hinweis: Die Canvas-Unterschriftenfelder müssen außerhalb des st.form liegen,
-# da Streamlit Custom Components (wie st_canvas) innerhalb von Formularen Probleme machen können.
+# Digitale Signaturen außerhalb des Forms mit update_streamlit=True
 st.header("5. Digitale Signaturen")
 col_sig_info1, col_sig_info2 = st.columns(2)
 with col_sig_info1:
@@ -125,6 +124,7 @@ with col_sig_info1:
         height=130,
         width=350,
         drawing_mode="freedraw",
+        update_streamlit=True,
         key="canvas_mieter_schaden",
     )
 with col_sig_info2:
@@ -137,6 +137,7 @@ with col_sig_info2:
         height=130,
         width=350,
         drawing_mode="freedraw",
+        update_streamlit=True,
         key="canvas_kare_schaden",
     )
 
@@ -147,7 +148,6 @@ if submit_button:
             " das PDF generieren."
         )
     else:
-        temp_files = []
         images_html = ""
         if uploaded_files:
             images_html = "<h3>Fotodokumentation</h3><div class='photo-grid'>"
@@ -169,51 +169,56 @@ if submit_button:
                 """
             images_html += "</div>"
 
-        # Unterschriften in temporäre PNGs konvertieren falls vorhanden
+        # Unterschriften sicher verarbeiten
         sig_mieter_html = "____________________________________<br>Mieter / Anwesender"
-        if (
-            canvas_mieter.image_data is not None
-            and canvas_mieter.json_data["objects"]
-        ):
-            sig_img_data1 = canvas_mieter.image_data.astype(np.uint8)
-            sig_pil1 = Image.fromarray(sig_img_data1).convert("RGBA")
-            # Weiß zu transparent konvertieren
-            datas = sig_pil1.getdata()
-            new_data = []
-            for item in datas:
-                if item[0] > 240 and item[1] > 240 and item[2] > 240:
-                    new_data.append((255, 255, 255, 0))
-                else:
-                    new_data.append(item)
-            sig_pil1.putdata(new_data)
-
-            sig_buf1 = BytesIO()
-            sig_pil1.save(sig_buf1, format="PNG")
-            sig_str1 = base64.b64encode(sig_buf1.getvalue()).decode()
-            sig_mieter_html = f"<img src='data:image/png;base64,{sig_str1}' style='max-height:60px;'/><br>____________________________________<br>Mieter / Anwesender"
+        try:
+            if (
+                canvas_mieter.image_data is not None
+                and canvas_mieter.json_data
+                and canvas_mieter.json_data.get("objects")
+            ):
+                sig_img_data1 = canvas_mieter.image_data.astype(np.uint8)
+                sig_pil1 = Image.fromarray(sig_img_data1).convert("RGBA")
+                datas = sig_pil1.getdata()
+                new_data = [
+                    (255, 255, 255, 0)
+                    if item[0] > 240 and item[1] > 240 and item[2] > 240
+                    else item
+                    for item in datas
+                ]
+                sig_pil1.putdata(new_data)
+                sig_buf1 = BytesIO()
+                sig_pil1.save(sig_buf1, format="PNG")
+                sig_str1 = base64.b64encode(sig_buf1.getvalue()).decode()
+                sig_mieter_html = f"<img src='data:image/png;base64,{sig_str1}' style='max-height:60px;'/><br>____________________________________<br>Mieter / Anwesender"
+        except Exception:
+            pass
 
         sig_kare_html = (
             "____________________________________<br>KARE-Immobilien"
         )
-        if (
-            canvas_kare.image_data is not None
-            and canvas_kare.json_data["objects"]
-        ):
-            sig_img_data2 = canvas_kare.image_data.astype(np.uint8)
-            sig_pil2 = Image.fromarray(sig_img_data2).convert("RGBA")
-            datas2 = sig_pil2.getdata()
-            new_data2 = []
-            for item in datas2:
-                if item[0] > 240 and item[1] > 240 and item[2] > 240:
-                    new_data2.append((255, 255, 255, 0))
-                else:
-                    new_data2.append(item)
-            sig_pil2.putdata(new_data2)
-
-            sig_buf2 = BytesIO()
-            sig_pil2.save(sig_buf2, format="PNG")
-            sig_str2 = base64.b64encode(sig_buf2.getvalue()).decode()
-            sig_kare_html = f"<img src='data:image/png;base64,{sig_str2}' style='max-height:60px;'/><br>____________________________________<br>KARE-Immobilien"
+        try:
+            if (
+                canvas_kare.image_data is not None
+                and canvas_kare.json_data
+                and canvas_kare.json_data.get("objects")
+            ):
+                sig_img_data2 = canvas_kare.image_data.astype(np.uint8)
+                sig_pil2 = Image.fromarray(sig_img_data2).convert("RGBA")
+                datas2 = sig_pil2.getdata()
+                new_data2 = [
+                    (255, 255, 255, 0)
+                    if item[0] > 240 and item[1] > 240 and item[2] > 240
+                    else item
+                    for item in datas2
+                ]
+                sig_pil2.putdata(new_data2)
+                sig_buf2 = BytesIO()
+                sig_pil2.save(sig_buf2, format="PNG")
+                sig_str2 = base64.b64encode(sig_buf2.getvalue()).decode()
+                sig_kare_html = f"<img src='data:image/png;base64,{sig_str2}' style='max-height:60px;'/><br>____________________________________<br>KARE-Immobilien"
+        except Exception:
+            pass
 
         html_content = f"""
         <!DOCTYPE html>
