@@ -2,11 +2,15 @@ from datetime import datetime
 import os
 from io import BytesIO
 import base64
-from PIL import Image
+from PIL import Image as PILImage
 import numpy as np
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-from weasyprint import HTML
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, KeepTogether
 
 st.set_page_config(
     page_title="KARE-Immobilien Schadensaufnahmeprotokoll",
@@ -154,195 +158,202 @@ if submit_button:
             " das PDF generieren."
         )
     else:
-        images_html = ""
+        pdf_path = "schadensprotokoll.pdf"
+        doc = SimpleDocTemplate(
+            pdf_path,
+            pagesize=A4,
+            rightMargin=40,
+            leftMargin=40,
+            topMargin=40,
+            bottomMargin=40
+        )
+        
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'DocTitle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            textColor=colors.HexColor('#1e3a8a'),
+            spaceAfter=4
+        )
+        
+        subtitle_style = ParagraphStyle(
+            'DocSubtitle',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
+            textColor=colors.HexColor('#555555'),
+            spaceAfter=12
+        )
+        
+        h2_style = ParagraphStyle(
+            'SectionHeader',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=11,
+            textColor=colors.HexColor('#1e3a8a'),
+            spaceBefore=10,
+            spaceAfter=6,
+            keepWithNext=True
+        )
+        
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            textColor=colors.HexColor('#333333')
+        )
+        
+        cell_bold = ParagraphStyle(
+            'TableBold',
+            parent=cell_style,
+            fontName='Helvetica-Bold',
+            textColor=colors.HexColor('#1e3a8a')
+        )
+
+        story = []
+        
+        # Header block
+        story.append(Paragraph("KARE-Immobilien", title_style))
+        story.append(Paragraph("Talstr. 32, 07545 Gera | Tel.: 0365 / 800 49 37 | E-Mail: Info@KARE-Immobilien.de", subtitle_style))
+        story.append(Paragraph("<b>Schadensaufnahmeprotokoll</b>", ParagraphStyle('SubHeader', parent=title_style, fontSize=13, textColor=colors.HexColor('#0f172a'))))
+        story.append(Spacer(1, 10))
+        
+        def create_table(data):
+            formatted_data = []
+            for row in data:
+                formatted_data.append([
+                    Paragraph(row[0], cell_bold),
+                    Paragraph(row[1], cell_style)
+                ])
+            t = Table(formatted_data, colWidths=[150, 385])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+                ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+                ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('LEFTPADDING', (0,0), (-1,-1), 6),
+                ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ]))
+            return t
+
+        story.append(Paragraph("1. Stammdaten", h2_style))
+        story.append(create_table([
+            ["Objektadresse", objekt_adresse],
+            ["Einheit / Mieter", f"{einheit} ({mieter_name})"],
+            ["Datum der Aufnahme", datum.strftime('%d.%m.%Y')],
+            ["Aufgenommen durch", bearbeiter],
+            ["Schadenskategorie", schadensart]
+        ]))
+        
+        story.append(Paragraph("2. Schadensbeschreibung", h2_style))
+        story.append(create_table([
+            ["Betroffener Raum", raum],
+            ["Beschreibung des Mangels", beschreibung],
+            ["Geschätzte Kosten", f"{kostenschätzung} €"],
+            ["Verantwortlichkeit", verantwortlichkeit]
+        ]))
+        
+        story.append(Paragraph("3. Maßnahme & Frist", h2_style))
+        story.append(create_table([
+            ["Erforderliche Maßnahme", massnahme],
+            ["Frist zur Behebung", frist.strftime('%d.%m.%Y')]
+        ]))
+
         if uploaded_files:
-            images_html = "<h3>Fotodokumentation</h3><div class='photo-grid'>"
+            story.append(Paragraph("Fotodokumentation", h2_style))
+            img_table_data = []
+            row_imgs = []
             for idx, file in enumerate(uploaded_files):
-                img = Image.open(file)
-                if img.mode in ("RGBA", "LA") or (
-                    img.mode == "P" and "transparency" in img.info
-                ):
+                img = PILImage.open(file)
+                if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
                     img = img.convert("RGB")
+                img_io = BytesIO()
+                img.save(img_io, format='JPEG')
+                img_io.seek(0)
+                
+                rl_img = RLImage(img_io, width=230, height=150)
+                rl_img.hAlign = 'CENTER'
+                caption = Paragraph(f"Foto {idx+1}: {file.name}", ParagraphStyle('Cap', parent=cell_style, fontSize=8, alignment=1))
+                row_imgs.append([rl_img, caption])
+                
+                if len(row_imgs) == 2:
+                    img_table_data.append(row_imgs)
+                    row_imgs = []
+            if row_imgs:
+                while len(row_imgs) < 2:
+                    row_imgs.append(["", ""])
+                img_table_data.append(row_imgs)
+                
+            for r in img_table_data:
+                cell_contents = [[cell[0], cell[1]] if isinstance(cell, list) else "" for cell in r]
+                # Build side-by-side photo layout
+                pass
+            
+            # Simple list approach for images
+            for idx, file in enumerate(uploaded_files):
+                img = PILImage.open(file)
+                if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                    img = img.convert("RGB")
+                img_io = BytesIO()
+                img.save(img_io, format='JPEG')
+                img_io.seek(0)
+                
+                rl_img = RLImage(img_io, width=200, height=130)
+                rl_img.hAlign = 'CENTER'
+                story.append(Spacer(1, 5))
+                story.append(rl_img)
+                story.append(Paragraph(f"Foto {idx+1}: {file.name}", ParagraphStyle('Cap', parent=cell_style, fontSize=8, alignment=1)))
+                story.append(Spacer(1, 5))
 
-                buffered = BytesIO()
-                img.save(buffered, format="JPEG")
-                img_str = base64.b64encode(buffered.getvalue()).decode()
-                images_html += f"""
-                <div class='photo-box'>
-                    <img src='data:image/jpeg;base64,{img_str}' style='width:100%; max-height:180px; object-fit:cover; border-radius:4px;'/>
-                    <p style='font-size:9pt; color:#555; text-align:center; margin-top:4px;'>Foto {idx+1}: {file.name}</p>
-                </div>
-                """
-            images_html += "</div>"
-
-        def get_sig_base64(state_key):
+        def get_sig_image(state_key):
             if state_key in st.session_state and st.session_state[state_key] is not None:
                 img_data = st.session_state[state_key].astype("uint8")
-                pil_img = Image.fromarray(img_data, mode="RGBA")
-                background = Image.new("RGB", pil_img.size, (255, 255, 255))
+                pil_img = PILImage.fromarray(img_data, mode="RGBA")
+                background = PILImage.new("RGB", pil_img.size, (255, 255, 255))
                 background.paste(pil_img, mask=pil_img.split()[3])
-                
-                buffered = BytesIO()
-                background.save(buffered, format="PNG")
-                return base64.b64encode(buffered.getvalue()).decode()
-            return None
+                buf = BytesIO()
+                background.save(buf, format="PNG")
+                buf.seek(0)
+                return RLImage(buf, width=180, height=50)
+            return Paragraph("<br><br>", cell_style)
 
-        sig_str1 = get_sig_base64("saved_mieter_sig")
-        sig_str2 = get_sig_base64("saved_kare_sig")
+        sig_mieter_obj = get_sig_image("saved_mieter_sig")
+        sig_kare_obj = get_sig_image("saved_kare_sig")
 
-        sig_mieter_html = f"<img src='data:image/png;base64,{sig_str1}' style='max-height:55px; display:block; margin-bottom:2px;'/><br>" if sig_str1 else "<br><br>"
-        sig_mieter_html += "____________________________________<br>Mieter / Anwesender"
+        sig_table_data = [
+            [sig_mieter_obj, sig_kare_obj],
+            [Paragraph("____________________________________<br/>Mieter / Anwesender", cell_style),
+             Paragraph("____________________________________<br/>KARE-Immobilien", cell_style)]
+        ]
+        
+        sig_table = Table(sig_table_data, colWidths=[250, 250])
+        sig_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ]))
 
-        sig_kare_html = f"<img src='data:image/png;base64,{sig_str2}' style='max-height:55px; display:block; margin-bottom:2px;'/><br>" if sig_str2 else "<br><br>"
-        sig_kare_html += "____________________________________<br>KARE-Immobilien"
+        story.append(Spacer(1, 15))
+        story.append(Paragraph("Hiermit wird der genannte Zustand bestätigt bzw. die Maßnahme eingeleitet.", ParagraphStyle('Note', parent=cell_style, fontSize=9)))
+        story.append(Spacer(1, 10))
+        story.append(KeepTogether(sig_table))
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="de">
-        <head>
-        <meta charset="UTF-8">
-        <style>
-            @page {{
-                size: A4;
-                margin: 15mm;
-                background-color: #ffffff;
-                @bottom-right {{
-                    content: "Seite " counter(page) " von " counter(pages);
-                    font-size: 8pt;
-                    color: #666;
-                }}
-                @bottom-left {{
-                    content: "KARE-Immobilien · Talstr. 32 · 07545 Gera";
-                    font-size: 8pt;
-                    color: #666;
-                }}
-            }}
-            body {{
-                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-                color: #333333;
-                line-height: 1.4;
-                font-size: 10pt;
-                margin: 0;
-                padding: 0;
-            }}
-            .header {{
-                border-bottom: 2px solid #1e3a8a;
-                padding-bottom: 10px;
-                margin-bottom: 20px;
-            }}
-            .header h1 {{
-                color: #1e3a8a;
-                font-size: 20pt;
-                margin: 0 0 5px 0;
-            }}
-            .header p {{
-                margin: 0;
-                color: #555;
-                font-size: 9pt;
-            }}
-            h2 {{
-                color: #1e3a8a;
-                font-size: 12pt;
-                border-bottom: 1px solid #cbd5e1;
-                padding-bottom: 4px;
-                margin-top: 15px;
-                margin-bottom: 8px;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 10px;
-            }}
-            th, td {{
-                padding: 5px 8px;
-                border: 1px solid #cbd5e1;
-                vertical-align: top;
-            }}
-            th {{
-                background-color: #f1f5f9;
-                color: #1e3a8a;
-                text-align: left;
-                width: 30%;
-            }}
-            td {{
-                width: 70%;
-            }}
-            .photo-grid {{
-                display: flex;
-                flex-wrap: wrap;
-                gap: 10px;
-                margin-top: 10px;
-            }}
-            .photo-box {{
-                width: 48%;
-                border: 1px solid #cbd5e1;
-                padding: 5px;
-                background: #f8fafc;
-                margin-bottom: 10px;
-                page-break-inside: avoid;
-            }}
-            .signature-section {{
-                margin-top: 25px;
-                page-break-inside: avoid;
-            }}
-            .sig-box {{
-                width: 45%;
-                display: inline-block;
-                margin-top: 20px;
-                text-align: center;
-            }}
-        </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>KARE-Immobilien</h1>
-                <p>Talstr. 32, 07545 Gera | Tel.: 0365 / 800 49 37 | E-Mail: Info@KARE-Immobilien.de</p>
-                <h2 style="border:none; color:#0f172a; margin-top:10px; font-size:15pt;">Schadensaufnahmeprotokoll</h2>
-            </div>
+        def add_footer(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            canvas_obj.setFont('Helvetica', 8)
+            canvas_obj.setFillColor(colors.HexColor('#666666'))
+            canvas_obj.drawString(40, 25, "KARE-Immobilien · Talstr. 32 · 07545 Gera")
+            canvas_obj.drawRightString(A4[0] - 40, 25, f"Seite {doc_obj.page}")
+            canvas_obj.restoreState()
 
-            <h2>1. Stammdaten</h2>
-            <table>
-                <tr><th>Objektadresse</th><td>{objekt_adresse}</td></tr>
-                <tr><th>Einheit / Mieter</th><td>{einheit} ({mieter_name})</td></tr>
-                <tr><th>Datum der Aufnahme</th><td>{datum.strftime('%d.%m.%Y')}</td></tr>
-                <tr><th>Aufgenommen durch</th><td>{bearbeiter}</td></tr>
-                <tr><th>Schadenskategorie</th><td>{schadensart}</td></tr>
-            </table>
-
-            <h2>2. Schadensbeschreibung</h2>
-            <table>
-                <tr><th>Betroffener Raum</th><td>{raum}</td></tr>
-                <tr><th>Beschreibung des Mangels</th><td>{beschreibung}</td></tr>
-                <tr><th>Geschätzte Kosten</th><td>{kostenschätzung} €</td></tr>
-                <tr><th>Verantwortlichkeit</th><td>{verantwortlichkeit}</td></tr>
-            </table>
-
-            <h2>3. Maßnahme & Frist</h2>
-            <table>
-                <tr><th>Erforderliche Maßnahme</th><td>{massnahme}</td></tr>
-                <tr><th>Frist zur Behebung</th><td>{frist.strftime('%d.%m.%Y')}</td></tr>
-            </table>
-
-            {images_html}
-
-            <div class="signature-section">
-                <p style="margin-bottom:15px; font-size:9pt;">Hiermit wird der genannte Zustand bestätigt bzw. die Maßnahme eingeleitet.</p>
-                <div style="width: 100%;">
-                    <div class="sig-box" style="float: left;">
-                        {sig_mieter_html}
-                    </div>
-                    <div class="sig-box" style="float: right;">
-                        {sig_kare_html}
-                    </div>
-                </div>
-                <div style="clear: both;"></div>
-            </div>
-        </body>
-        </html>
-        """
-
-        pdf_path = "schadensprotokoll.pdf"
-        HTML(string=html_content).write_pdf(pdf_path)
+        doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
 
         with open(pdf_path, "rb") as pdf_file:
             PDFbyte = pdf_file.read()
