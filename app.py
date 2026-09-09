@@ -118,7 +118,7 @@ with st.form("schaden_form"):
         label="Schadensprotokoll als PDF generieren"
     )
 
-st.header("5. Digitale Signaturen")
+st.header("5. Digitale Signaturen (optional)")
 col_sig_info1, col_sig_info2 = st.columns(2)
 with col_sig_info1:
     st.write("**Unterschrift Mieter / Anwesender**")
@@ -159,18 +159,10 @@ with col_sig_info2:
         st.session_state["saved_kare_sig"] = None
 
 if submit_button:
-    # Prüfen, ob beide Unterschriften im Session State hinterlegt sind
-    sig_mieter_valid = "saved_mieter_sig" in st.session_state and st.session_state["saved_mieter_sig"] is not None
-    sig_kare_valid = "saved_kare_sig" in st.session_state and st.session_state["saved_kare_sig"] is not None
-
     if not protokoll_bestätigt:
         st.error(
             "Bitte bestätigen Sie das Protokoll über die Checkbox, bevor Sie"
             " das PDF generieren."
-        )
-    elif not sig_mieter_valid or not sig_kare_valid:
-        st.error(
-            "Es fehlen Unterschriften! Bitte stellen Sie sicher, dass sowohl der Mieter als auch KARE-Immobilien unterschrieben haben."
         )
     else:
         pdf_path = "schadensprotokoll.pdf"
@@ -283,35 +275,6 @@ if submit_button:
 
         if uploaded_files:
             story.append(Paragraph("Fotodokumentation", h2_style))
-            img_table_data = []
-            row_imgs = []
-            for idx, file in enumerate(uploaded_files):
-                img = PILImage.open(file)
-                if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
-                    img = img.convert("RGB")
-                img_io = BytesIO()
-                img.save(img_io, format='JPEG')
-                img_io.seek(0)
-                
-                rl_img = RLImage(img_io, width=230, height=150)
-                rl_img.hAlign = 'CENTER'
-                caption = Paragraph(f"Foto {idx+1}: {file.name}", ParagraphStyle('Cap', parent=cell_style, fontSize=8, alignment=1))
-                row_imgs.append([rl_img, caption])
-                
-                if len(row_imgs) == 2:
-                    img_table_data.append(row_imgs)
-                    row_imgs = []
-            if row_imgs:
-                while len(row_imgs) < 2:
-                    row_imgs.append(["", ""])
-                img_table_data.append(row_imgs)
-                
-            for r in img_table_data:
-                cell_contents = [[cell[0], cell[1]] if isinstance(cell, list) else "" for cell in r]
-                # Build side-by-side photo layout
-                pass
-            
-            # Simple list approach for images
             for idx, file in enumerate(uploaded_files):
                 img = PILImage.open(file)
                 if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
@@ -375,8 +338,7 @@ if submit_button:
             PDFbyte = pdf_file.read()
 
         st.success(
-            "Schadensaufnahmeprotokoll erfolgreich als PDF erstellt und mit"
-            " Unterschriften versehen!"
+            "Schadensaufnahmeprotokoll erfolgreich als PDF erstellt!"
         )
         st.download_button(
             label="📄 PDF-Protokoll herunterladen",
