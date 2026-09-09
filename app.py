@@ -300,7 +300,7 @@ if submit_button:
                 background.save(buf, format="PNG")
                 buf.seek(0)
                 return RLImage(buf, width=180, height=50)
-            return Paragraph("<br><br>", cell_style)
+            return Paragraph("<br/><br/>", cell_style)
 
         sig_mieter_obj = get_sig_image("saved_mieter_sig")
         sig_kare_obj = get_sig_image("saved_kare_sig")
