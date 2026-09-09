@@ -34,6 +34,9 @@ with st.form("schaden_form"):
         mieter_name = st.text_input(
             "Name des Mieters / Ansprechpartner", ""
         )
+        mieter_kontakt = st.text_input(
+            "Kontaktdaten (Telefonnummer oder E-Mail)", ""
+        )
         einheit = st.text_input("Wohnungs- / Einheitennummer", "")
     with col2:
         datum = st.date_input("Datum der Aufnahme", datetime.now())
@@ -133,6 +136,8 @@ with col_sig_info1:
     )
     if canvas_mieter.image_data is not None and np.any(canvas_mieter.image_data[:, :, 3] > 0):
         st.session_state["saved_mieter_sig"] = canvas_mieter.image_data
+    else:
+        st.session_state["saved_mieter_sig"] = None
 
 with col_sig_info2:
     st.write("**Unterschrift KARE-Immobilien**")
@@ -150,12 +155,22 @@ with col_sig_info2:
     )
     if canvas_kare.image_data is not None and np.any(canvas_kare.image_data[:, :, 3] > 0):
         st.session_state["saved_kare_sig"] = canvas_kare.image_data
+    else:
+        st.session_state["saved_kare_sig"] = None
 
 if submit_button:
+    # Prüfen, ob beide Unterschriften im Session State hinterlegt sind
+    sig_mieter_valid = "saved_mieter_sig" in st.session_state and st.session_state["saved_mieter_sig"] is not None
+    sig_kare_valid = "saved_kare_sig" in st.session_state and st.session_state["saved_kare_sig"] is not None
+
     if not protokoll_bestätigt:
         st.error(
             "Bitte bestätigen Sie das Protokoll über die Checkbox, bevor Sie"
             " das PDF generieren."
+        )
+    elif not sig_mieter_valid or not sig_kare_valid:
+        st.error(
+            "Es fehlen Unterschriften! Bitte stellen Sie sicher, dass sowohl der Mieter als auch KARE-Immobilien unterschrieben haben."
         )
     else:
         pdf_path = "schadensprotokoll.pdf"
@@ -246,6 +261,7 @@ if submit_button:
         story.append(create_table([
             ["Objektadresse", objekt_adresse],
             ["Einheit / Mieter", f"{einheit} ({mieter_name})"],
+            ["Kontaktdaten Mieter", mieter_kontakt],
             ["Datum der Aufnahme", datum.strftime('%d.%m.%Y')],
             ["Aufgenommen durch", bearbeiter],
             ["Schadenskategorie", schadensart]
